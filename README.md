@@ -1,5 +1,5 @@
 # Chat_room_website
-Discord like app for chatting **In Progress**
+Discord like app for chatting '**In Progress**'
 
 **SetUp:**
 

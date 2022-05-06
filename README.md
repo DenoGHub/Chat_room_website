@@ -12,7 +12,6 @@ Discord like app for chatting '**In Progress**'
 
 * Python
 * Django
-* JavaScript
 
 **App Functionality:**
 

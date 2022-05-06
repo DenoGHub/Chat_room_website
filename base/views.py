@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.forms import UserCreationForm
-from .models import Room, Topic
+from .models import Room, Topic, Message
 from .forms import RoomForm
 
 
@@ -28,7 +28,7 @@ def loginPage(request):
         return redirect('home')
 
     if request.method == 'POST':
-        username = request.POST.get('username')
+        username = request.POST.get('username').lower()
         password = request.POST.get('password')
 
         # Checks if user exist
@@ -55,8 +55,20 @@ def logoutUser(request):
 
 
 def registerUser(request):
-    form = UserCreationForm()
-    return render(request, 'base/login_register.html', {'form': form})
+    form = UserCreationForm()  # 'UserCreationForm()' from djagno functions
+
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save(commit=False)
+            user.username = user.username.lower()
+            user.save()
+            login(request, user)
+            return redirect('home')
+        else:
+            messages.error(request, 'An error occured during registration')
+
+    return render(request, 'base/login_register.html', {'form': form, })
 
 
 def home(request):  # request - HttpObject
@@ -70,9 +82,12 @@ def home(request):  # request - HttpObject
 
     topics = Topic.objects.all()
     rooms_count = rooms.count()
+    room_messages = Message.objects.filter\
+        (Q(room__topic__name__icontains=q))  # shows 'recent activities' for specific topics selected
 
     context = {'rooms': rooms, 'topics': topics,
-               'rooms_count': rooms_count}  # makes 'rooms' list accessible through home.html
+               'rooms_count': rooms_count,
+               'room_messages': room_messages}  # makes 'rooms' list accessible through home.html
     return render(request, 'base/home.html', context)
 
 
@@ -82,8 +97,32 @@ def room(request, pk):  # gives access to url 'pk' id
     #     if i['id'] == int(pk):
     #         room = i
     room = Room.objects.get(id=pk)
-    context = {'room': room}
+    room_messages = room.message_set.all()
+    participants = room.participants.all()
+
+    # Messaging functionality
+    if request.method == 'POST':
+        message = Message.objects.create(
+            user=request.user,
+            room=room,
+            body=request.POST.get('body')
+        )
+        room.participants.add(request.user)  # adds user to participants list after the user writes a message
+        return redirect('room', pk=room.id)
+
+    context = {'room': room, 'room_messages': room_messages,
+               'participants': participants}
     return render(request, 'base/room.html', context)
+
+
+def userProfile(request, pk):
+    user = User.objects.get(id=pk)
+    rooms = user.room_set.all()
+    room_messages = user.message_set.all()
+    topics = Topic.objects.all()
+    context = {'user': user, 'rooms': rooms, 'topics': topics,
+               'room_messages': room_messages}
+    return render(request, 'base/profile.html', context)
 
 
 @login_required(login_url='login')  # if users is not logged in, he will be redirected to loginPage
@@ -92,7 +131,9 @@ def createRoom(request):
     if request.method == 'POST':
         form = RoomForm(request.POST)
         if form.is_valid():
-            form.save()
+            room = form.save(commit=False)
+            room.host = request.user
+            room.save()
             return redirect('home')
     context = {'form': form}
     return render(request, 'base/room_form.html', context)
@@ -128,3 +169,16 @@ def deleteRoom(request, pk):
         room.delete()
         return redirect('home')
     return render(request, 'base/delete.html', {'obj': room})
+
+
+@login_required(login_url='login')
+def deleteMessage(request, pk):
+    message = Message.objects.get(id=pk)
+
+    if request.user != message.user:
+        return HttpResponse('You are not allowed here')
+
+    if request.method == 'POST':
+        message.delete()
+        return redirect('home')
+    return render(request, 'base/delete.html', {'obj': message})
